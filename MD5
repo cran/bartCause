@@ -1,6 +1,6 @@
-2f67fcd3836d46be3b3fc135bb92c449 *DESCRIPTION
+48e6889b7402d33db5c3697c1f5c7758 *DESCRIPTION
 0fa8df13eb1acef4a87d6eea6fa6916f *NAMESPACE
-267acb3f8c2f217e21fe6c525fe405b8 *R/argParse.R
+f7812cbd1096cf23f2ea65b0d0529aaa *R/argParse.R
 adee8e140ff7ac1419acaac3e13809e7 *R/bartc.R
 7c26ef6cd4c4508ba46883ef6a5a069a *R/bayesOpt.R
 c815cc0095fa36daf54840ba3d051064 *R/commonSupport.R
@@ -14,7 +14,7 @@ fdf02eed67698be2185bebea8654a837 *R/summary.R
 c650254bbb9c59088f958b00a3308499 *R/treatmentFit.R
 b46b492d1c05e0f3d428e31338a1536a *R/utility.R
 a17f97d09fd9759ffc391a1fef255397 *inst/CITATION
-7d2518012a8f78b19864c2bab49e0da6 *inst/NEWS.Rd
+83ab1a2420604c476d62089dbfd4f10f *inst/NEWS.Rd
 593b3dbf7057a8f5d85d03b2f2e99d8e *inst/common/binaryData.R
 367cc8805f7ff29a1ed91ec522d7a977 *inst/common/groupedData.R
 b798d14284e8c747fe365dfa149308d3 *inst/common/linearData.R
@@ -23,12 +23,12 @@ b798d14284e8c747fe365dfa149308d3 *inst/common/linearData.R
 8ce50a4f1e654e9883fd6a6ba588b35e *man/plot.Rd
 cfe4b01f0f4a858b462c72d1651ad65d *man/summary.Rd
 e449cb1200db27ef956e8434291a5dd6 *tests/testthat.R
-2194712bce684a6cf36f84b28dd1996f *tests/testthat/test-01-callConstructors.R
+b81a79c9a2e41277210011c0b3ec03aa *tests/testthat/test-01-callConstructors.R
 eb92266f84e59442488e467b71c3459a *tests/testthat/test-02-treatmentFit.R
 569d011f935c223679a3efc710ca19ef *tests/testthat/test-03-responseFit.R
 a815095b81f237f5f7ee60d3647c6f55 *tests/testthat/test-04-bartc.R
 9368e643beee305aceb50c885e7b8d7d *tests/testthat/test-05-generics.R
-083963692b2a7b8ca82dabb963e718fd *tests/testthat/test-06-regression.R
+679b2f61e1ae3bec711edeb90060de62 *tests/testthat/test-06-regression.R
 e724f5d7606a3a7ec9e997899458c4ae *tests/testthat/test-07-commonSupport.R
 2b10d790d4a9989f6a342e2fedaedbd8 *tests/testthat/test-08-predict.R
 2b9540c049ce75227ef2dd9846698842 *tests/testthat/test-09-binary.R
