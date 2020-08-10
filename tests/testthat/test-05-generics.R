@@ -71,6 +71,15 @@ test_that("extract matches manual fit", {
     expect_equal(cate[[as.character(group)]], apply(icate[,,testData$g == group], c(1L, 2L), mean))
 })
 
+test_that("ppd-based estimates match manual", {
+  expect_equal(as.numeric((testData$y - fitted(fit, "y.cf")) * (2 * testData$z - 1)),
+               fitted(fit, "ite"))
+  expect_equal(mean((testData$y - fitted(fit, "y.cf")) * (2 * testData$z - 1)),
+               sum(fitted(fit, "sate") * (table(testData$g) / length(testData$y))))
+  expect_equal(testData$y[testData$z == 1], fitted(fit, "y.1")[testData$z == 1])
+  expect_equal(testData$y[testData$z == 0], fitted(fit, "y.0")[testData$z == 0])
+})
+
 test_that("summary object contains correct information", {
   sum <- summary(fit)
   

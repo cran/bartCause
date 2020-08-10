@@ -1,6 +1,6 @@
 getBartResponseFit <- function(response, treatment, confounders, data, subset, weights, estimand,
                                group.by = NULL, use.ranef = TRUE,
-                               commonSup.rule, commonSup.cut, p.score, crossvalidateBinary = FALSE, calculateEstimates = TRUE, ...)
+                               commonSup.rule, commonSup.cut, p.score, crossvalidate = FALSE, calculateEstimates = TRUE, ...)
 {
   treatmentIsMissing    <- missing(treatment)
   responseIsMissing     <- missing(response)
@@ -102,7 +102,7 @@ getBartResponseFit <- function(response, treatment, confounders, data, subset, w
   responseIsBinary <- unique(responseData@y)
   responseIsBinary <- length(responseIsBinary) == 2L && min(responseIsBinary) == 0 && max(responseIsBinary) == 1
   
-  if (responseIsBinary && crossvalidateBinary)
+  if (crossvalidate)
     bartCall <- optimizeBARTCall(bartCall, evalEnv)
   
   bartFit <- eval(bartCall, envir = evalEnv)
@@ -159,7 +159,12 @@ getBartResponseFit <- function(response, treatment, confounders, data, subset, w
   
   if (is.null(bartFit[["y"]])) bartFit[["y"]] <- responseData@y
   
-  namedList(fit = bartFit, data = responseData, mu.hat.obs, mu.hat.cf, name.trt = treatmentName, trt, sd.obs, sd.cf, commonSup.sub, missingRows, est = NULL, fitPars = NULL)
+  result <- namedList(fit = bartFit, data = responseData, mu.hat.obs, mu.hat.cf, name.trt = treatmentName, trt, sd.obs, sd.cf, commonSup.sub, missingRows, est = NULL, fitPars = NULL)
+  
+  if (crossvalidate)
+    result[["k"]] <- bartCall[["k"]]
+  
+  result
 }
 
 boundValues <- function(x, bounds){

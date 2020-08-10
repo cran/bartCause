@@ -48,7 +48,7 @@ optimizeBARTCall <- function(bartCall, env)
   wrapper <- function(k) {
     xbartCall[["k"]] <- diff(kRange) * k + min(kRange)
     res <- eval(xbartCall)
-    list(Score = if (!is.null(dim(res))) res[1L,] else res)
+    if (!is.null(dim(res))) res[1L,] else res
   }
   evalEnv <- new.env(parent = env)
   environment(wrapper) <- evalEnv
@@ -293,7 +293,6 @@ bayesOptimize <- function(f, x.0, n.iter = 50L, tau = 10, theta = 1, sigma.sq = 
   x.uni <- unique(x)
   res <- x.uni[which.min(post.mean(x.uni, GP))[1L]]
   if (length(res) != 1L || anyNA(res))
-    #stop("result NA somehow")
-    browser()
+    stop("error in bayesOptimize: result is unexpectedly NA or not of length 1")
   res
 }

@@ -26,6 +26,15 @@ multiplyArrayByVec <- function(x, v) {
   }
 }
 
+# v - x
+subtractArrayFromVec <- function(v, x) {
+  if (length(dim(x)) > 2L) {
+    aperm(v - aperm(x, c(3L, 1L, 2L)), c(2L, 3L, 1L))
+  } else {
+    t(v - t(x))
+  }
+}
+
 averageDifferences <- function(samples.indiv.diff, treatmentRows, weights, estimand, commonSup.sub)
 {
   x <- NULL ## R CMD check
@@ -82,7 +91,7 @@ getEstimateSamples <- function(samples.indiv.diff, treatmentRows, weights, estim
 predict.bartcFit <-
   function(object, newdata,
            group.by,
-           type = c("mu.0", "mu.1", "y.0", "y.1", "icate", "ite", "p.score"),
+           type = c("mu", "y", "mu.0", "mu.1", "y.0", "y.1", "icate", "ite", "p.score"),
            combineChains = TRUE, ...)
 {
   matchedCall <- match.call()
@@ -181,6 +190,14 @@ predict.bartcFit <-
     predictArgs <- list(object$fit.rsp, x.new, combineChains = FALSE, ...)
   }
   
+  if (type %in% c("mu", "y")) {
+    if (is.null(x.new[[object$name.trt]]) || anyNA(x.new[[object$name.trt]]))
+      stop("for predict type '", type, "', newdata must have '", object$name.trt, "' column filled")
+    mu <- do.call("predict", predictArgs)
+    if (type == "y")
+      y <- sampleFromPPD(object, y)
+  }
+  
   if (type %in% c("mu.0", "y.0", "icate", "ite")) {
     predictArgs[[2L]][[object$name.trt]] <- 0
     mu.0 <- do.call("predict", predictArgs)
@@ -197,6 +214,8 @@ predict.bartcFit <-
   
   result <-
     switch(type,
+           mu    = mu,
+           y     = y,
            mu.0  = mu.0,
            mu.1  = mu.1,
            icate = mu.1 - mu.0,
@@ -316,7 +335,13 @@ extract.bartcFit <-
   .GlobalEnv$.Random.seed <- oldSeed
   
   obsCfToTrtCtl <- function(obs, cf, trt) {
-    if (length(dim(obs)) > 2L) {
+    if (is.null(dim(obs))) {
+      if (length(dim(cf)) > 2L) {
+        aperm(obs * trt + aperm(cf, c(3L, 1L, 2L)) * (1 - trt), c(2L, 3L, 1L))
+      } else {
+        t(obs * trt + t(cf) * (1 - trt))
+      }
+    } else if (length(dim(obs)) > 2L) {
       aperm(aperm(obs, c(3L, 1L, 2L)) * trt + aperm(cf, c(3L, 1L, 2L)) * (1 - trt), c(2L, 3L, 1L))
     } else {
       t(t(obs) * trt + t(cf) * (1 - trt))
@@ -328,7 +353,7 @@ extract.bartcFit <-
     samples.indiv.diff <- multiplyArrayByVec(with(object,
       switch(type,
              pate = y.obs.ppd - y.cf,
-             sate = y.obs     - y.cf,
+             sate = subtractArrayFromVec(y.obs, y.cf),
              cate = mu.hat.obs - mu.hat.cf)),
       trtSign)
     
@@ -351,7 +376,7 @@ extract.bartcFit <-
            y.cf        = y.cf,
            y.1         = obsCfToTrtCtl(y.obs, y.cf, trt),
            y.0         = obsCfToTrtCtl(y.obs, y.cf, 1 - trt),
-           ite         = multiplyArrayByVec(     y.obs -      y.cf, trtSign),
+           ite         = multiplyArrayByVec(subtractArrayFromVec(y.obs, y.cf), trtSign),
            icate       = multiplyArrayByVec(mu.hat.obs - mu.hat.cf, trtSign),
            p.score     = object$samples.p.score,
            p.weights   = getPWeights(estimand, trt, weights, if (!is.null(samples.p.score)) samples.p.score else p.score, fitPars$p.scoreBounds)))
