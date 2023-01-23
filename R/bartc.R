@@ -1,5 +1,5 @@
 bartc <- function(
-  response, treatment, confounders, data, subset, weights,
+  response, treatment, confounders, parametric, data, subset, weights,
   method.rsp = c("bart", "tmle", "p.weight"),
   method.trt = c("bart", "glm", "none"),
   estimand   = c("ate", "att", "atc"),
@@ -9,7 +9,8 @@ bartc <- function(
   args.rsp = list(), args.trt = list(),
   p.scoreAsCovariate = TRUE, use.ranef = TRUE, group.effects = FALSE,
   crossvalidate = FALSE,
-  keepCall = TRUE, verbose = TRUE, ...
+  keepCall = TRUE, verbose = TRUE,
+  seed = NA_integer_, ...
 )
 {
   matchedCall <- match.call()
@@ -51,6 +52,12 @@ bartc <- function(
       (is.character(crossvalidate) && crossvalidate %not_in% c("rsp", "trt")))
     stop("crossvalidate must be one of TRUE, FALSE, 'rsp', or 'trt'")
   
+  if (!is.na(seed)) {
+    oldSeed <- .GlobalEnv[[".Random.seed"]]
+    set.seed(seed)
+    matchedCall[["seed"]] <- NULL
+  }
+  
   fit.trt <- p.score <- samples.p.score <- NULL
   if (is.numeric(method.trt)) {
     if (!is.null(dim(method.trt))) {
@@ -65,7 +72,6 @@ bartc <- function(
     if (method.trt %not_in% eval(formals(bartCause::bartc)$method.trt))
       stop("method.trt must be in '", paste0(eval(formals(bartCause::bartc)$method.trt), collapse = "', '"), "'")
     
-    
     if (method.trt %not_in% c("none", "glm") && !is.null(matchedCall[["group.by"]]) && use.ranef) {
       group.by <- eval(redirectCall(matchedCall, quoteInNamespace(getGroupBy)), envir = callingEnv)
       group.byIsLiteral <- TRUE
@@ -78,14 +84,15 @@ bartc <- function(
       bart      = redirectCall(matchedCall, quoteInNamespace(getBartTreatmentFit)),
       none      = NULL)
     
-        
     if (!is.null(treatmentCall)) {
       if (!is.null(args.trt) && length(args.trt) > 0L)
         treatmentCall[names(matchedCall[["args.trt"]])[-1L]] <- matchedCall[["args.trt"]][-1L]
     
       if (!is.null(treatmentCall[["crossvalidate"]]))
         treatmentCall[["crossvalidate"]] <- if (is.logical(crossvalidate)) crossvalidate else crossvalidate == "trt"
-
+      
+      if (!is.na(seed) && method.trt == "bart")
+        treatmentCall$seed <- sample.int(.Machine$integer.max, 1L)
       
       if (verbose) cat("fitting treatment model via method '", method.trt, "'\n", sep = "")
       
@@ -136,7 +143,7 @@ bartc <- function(
   if ("verbose" %in% names(responseCall)) responseCall[[which(names(responseCall) == "verbose")]] <- verbose
   
   evalEnv <- callingEnv
-  if (p.scoreAsCovariate && !is.null(p.score)) {
+  if ((p.scoreAsCovariate || method.rsp %in% c("tmle", "p.weight")) && !is.null(p.score)) {
     evalEnv <- new.env(parent = callingEnv)
     pScoreArgName <- "ps"
     if (!is.null(matchedCall$data))
@@ -157,6 +164,8 @@ bartc <- function(
   if (!is.null(responseCall[["crossvalidate"]]))
     responseCall[["crossvalidate"]] <- if (is.logical(crossvalidate)) crossvalidate else crossvalidate == "rsp"
   
+  if (!is.na(seed))
+    responseCall$seed <- sample.int(.Machine$integer.max, 1L)
   
   if (verbose) cat("fitting response model via method '", method.rsp, "'\n", sep = "")
   
@@ -179,12 +188,29 @@ bartc <- function(
     if (use.ranef) result[["use.ranef"]] <- use.ranef
     if (group.effects) result[["group.effects"]] <- group.effects
   }
-  result$n.chains <- if (length(dim(fit$yhat.train) > 2L)) dim(fit$yhat.train)[1L] else 1L
+  result$n.chains <- if (length(dim(fit$yhat.train)) > 2L) dim(fit$yhat.train)[1L] else 1L
   
-  if (!exists(".Random.seed", .GlobalEnv)) runif(1L)
-  result$seed <- .GlobalEnv[[".Random.seed"]]
-  
+  if (!is.na(seed)) {
+    result$seed <- .GlobalEnv$.Random.seed
+    
+    if (!is.null(oldSeed))
+      .GlobalEnv[[".Random.seed"]] <- oldSeed
+    else
+      rm(list = ".Random.seed", envir = .GlobalEnv) # unset the seed
+  } else {
+    if (!exists(".Random.seed", .GlobalEnv)) runif(1L)
+    result$seed <- .GlobalEnv$.Random.seed
+  }
+   
   class(result) <- "bartcFit"
   result
+}
+
+responseIsBinary <- function(object) {
+  if (inherits(object$fit.rsp, "stan4bartFit")) {
+    responseIsBinary <- object$fit.rsp$family$family != "gaussian"
+  } else {
+    responseIsBinary <- is.null(object$fit.rsp[["sigma"]])
+  }
 }
 

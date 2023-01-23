@@ -20,15 +20,15 @@ getPATEEstimate.tmle.var.exp = function(samples.tmle, samples.icate, weights)
 {
   samples.pate <- if (length(dim(samples.tmle)) == 2L) samples.tmle[,"est"] else as.vector(samples.tmle[,,"est"])
   
-  n.obs     <- nrow(samples.icate)
-  n.samples <- ncol(samples.icate)
+  n.obs     <- ncol(samples.icate)
+  n.samples <- nrow(samples.icate)
   
   est <- mean(samples.pate)
   var.between.samples <- var(samples.pate)
   if (!is.null(weights))
-    variance.samples <- apply(weights * t(t(samples.icate) - samples.pate)^2, 2L, sum) * (n.obs / ((n.obs - 1) * n.samples))
+    variance.samples <- apply(weights * t(samples.icate - samples.pate)^2, 2L, sum) * n.obs / sum(weights) / (n.obs - 1)
   else
-    variance.samples <- apply((t(samples.icate) - samples.pate)^2, 1L, mean) * (n.obs / ((n.obs - 1) * n.samples))
+    variance.samples <- apply(t(samples.icate - samples.pate)^2, 2L, sum) / (n.obs - 1)
   var.within.samples <- mean(variance.samples)
   
   c(estimate = est, sd = sqrt(var.between.samples + var.within.samples))
@@ -63,21 +63,22 @@ getPATEIntervalFunction.tmle = function(ci.style)
 
 getPATEEstimate.bart.var.exp = function(samples.icate, weights)
 {
-  n.obs <- nrow(samples.icate)
-  n.samples <- ncol(samples.icate)
+  n.obs <- ncol(samples.icate)
+  n.samples <- nrow(samples.icate)
   
   if (!is.null(weights)) {
-    est <- mean(weights %*% samples.icate)
+    cate.samples <- apply(weights * t(samples.icate), 2L, sum)
+    est <- mean(cate.samples)
     
-    cate.samples <- apply(weights * samples.icate, 2L, sum)
     var.between.samples <- var(cate.samples)
-    variance.samples <- apply(weights * t(t(samples.icate) - cate.samples)^2, 2L, sum) * (n.obs / ((n.obs - 1) * n.samples))
+    variance.samples <- apply(weights * t(samples.icate - cate.samples)^2, 2L, sum) * n.obs / sum(weights) / (n.obs - 1)
   } else {
     est <- mean(samples.icate)
     
     cate.samples <- apply(samples.icate, 1L, mean)
     var.between.samples <- var(cate.samples)
-    variance.samples <- apply(samples.icate, 2L, var) / n.samples
+    # Each should be a sample of the variance across people
+    variance.samples <- apply(samples.icate, 1L, var)
   }
   var.within.samples  <- mean(variance.samples)
   
@@ -192,12 +193,20 @@ getATEEstimates <- function(object, target, ci.style, ci.level, pate.style)
   estimateCall <- quote(getATEEstimate())
   intervalCall <- quote(getATEInterval())
   
-  weights <- object$data.rsp@weights
+  weights <- if (inherits(object$fit.rsp, "stan4bartFit")) object$fit.rsp$weights else object$data.rsp@weights
+  if (!is.null(weights) && length(weights) == 0L) weights <- NULL
+  y <- if (inherits(object$fit.rsp, "stan4bartFit")) object$fit.rsp$y else object$data.rsp@y
+  
   inferentialSubset <- switch(object$estimand,
-                              ate = rep(TRUE, length(object$data.rsp@y)),
+                              ate = rep(TRUE, length(y)),
                               att = object$trt >  0,
                               atc = object$trt <= 0)
-  n.obs <- sum(inferentialSubset)
+  inferentialSubset <- inferentialSubset
+  keepSubset <- object$commonSup.sub
+  n.obs <- sum(inferentialSubset & keepSubset)
+  
+  if (responseIsBinary(object))
+    estimateVariables <- setdiff(estimateVariables, "sigma")
   
   # load whatever we might need
   for (i in seq_along(estimateVariables)) {
@@ -207,22 +216,32 @@ getATEEstimates <- function(object, target, ci.style, ci.level, pate.style)
            samples.icate = extract(object, "icate", "all"),
            samples.cate  = extract(object, "cate"),
            samples.sate  = extract(object, "sate"),
-           sigma         = object$fit.rsp$sigma,
-           samples.obs   = combineChains(object$mu.hat.obs),
-           samples.cf    = combineChains(object$mu.hat.cf),
+           sigma         = extract(object, "sigma"),
+           samples.obs   = extract(object, "mu.obs", "all"),
+           samples.cf    = extract(object, "mu.cf", "all"),
+           weights       = weights,
            n.obs = n.obs
     ))
-    estimateCall[[i + 1L]] <- parse(text = varName)[[1L]]
+    estimateCall[[i + 1L]] <- str2lang(varName)
   }
+  
+  if (responseIsBinary(object))
+    estimateCall["sigma"] <- list(NULL)
+  
   for (i in seq_along(intervalVariables)) {
     varName <- intervalVariables[i]
     switch(varName,
            samples.pate = samples.pate <- extract(object, "pate"))
-    intervalCall[[i + 1L]] <- parse(text = varName)[[1L]]
+    intervalCall[[i + 1L]] <- str2lang(varName)
   }
   
   if (!groupEstimates) {
-    if (!is.null(weights)) weights <- weights / sum(weights)
+    if (!is.null(weights)) {
+      weights <- weights[inferentialSubset]
+      weights <- weights / sum(weights)
+    }
+    for (varName in intersect(estimateVariables, c("samples.icate", "samples.obs", "samples.cf")))
+      assign(varName, get(varName)[,keepSubset & inferentialSubset,drop = FALSE])
     
     estimate <- eval(estimateCall)
     interval <- eval(intervalCall)
@@ -232,7 +251,7 @@ getATEEstimates <- function(object, target, ci.style, ci.level, pate.style)
   } else {
     estimates <- as.data.frame(t(sapply(seq_along(levels(object$group.by)), function(i) {
       level <- levels(object$group.by)[i]
-      levelObs <- object$group.by == level & inferentialSubset & object$commonSup.sub
+      levelObs <- object$group.by == level & inferentialSubset & keepSubset
       
       if (!is.null(weights)) {
         weights <- weights[levelObs]
@@ -258,6 +277,7 @@ getATEEstimates <- function(object, target, ci.style, ci.level, pate.style)
       names(interval) <- c("ci.lower", "ci.upper")
       c(estimate, interval, n = n.obs)
     })))
+    row.names(estimates) <- levels(object$group.by)
     
     # combine back to get whole if possible
     if (object$method.rsp %in% "bart") {
@@ -268,7 +288,7 @@ getATEEstimates <- function(object, target, ci.style, ci.level, pate.style)
       estimate <- eval(estimateCall)
       interval <- eval(intervalCall)
       
-      totalName <- "tot"
+      totalName <- "total"
       while (totalName %in% rownames(estimates))
         totalName <- paste0(totalName, ".")
       estimates[totalName,] <- c(estimate, interval, n.obs)
@@ -358,7 +378,11 @@ print.bartcFit.summary <- function(x, ...)
       "  model.rsp: ", x$method.rsp, "\n",
       "  model.trt: ", x$method.trt, "\n\n", sep = "", ...)
   
-  cat("Treatment effect (", x$ci.info$target, "):\n", ..., sep = "")
+  target <- switch(x$ci.info$target,
+                   pate = "population average",
+                   sate = "sample average",
+                   cate = "conditional average")
+  cat("Treatment effect (", target, "):\n", ..., sep = "")
   
   print(x$estimates, digits = digits, ...)
   if (!is.null(x$estimates[["n"]]) && any(x$estimates[["n"]] <= 10L) && x$n.obs > 10L)
@@ -382,7 +406,7 @@ print.bartcFit.summary <- function(x, ...)
   }
   
   cat("Result based on ", x$n.samples, " posterior samples", 
-      if (!is.null(x$n.chains)) paste0(" times ", x$n.chains, " chains") else "",
+      if (!is.null(x$n.chains) && x$n.chains > 1L) paste0(" times ", x$n.chains, " chains") else "",
       "\n", sep = "", ...)
   
   invisible(x)
@@ -393,8 +417,15 @@ print.bartcFit <- function(x, digits = max(3L, getOption("digits") - 3L), ...)
   if (!is.null(x$call))
     cat("Call:\n", paste0(deparse(x$call), collapse = "\n  "), "\n\n", sep = "")
   
-  target <- if (x$method.rsp %in% c("p.weight", "tmle")) "pate" else "cate"
-  cat("Treatment effect (", x$estimand, ", ", target, "): ", format(fitted(x, target), digits = digits), "\n", sep = "", ...)
+  if (x$method.rsp %in% c("p.weight", "tmle")) {
+    target <- "pate"
+    target_str <- "population average"
+  } else {
+    target <- "cate"
+    target_str <- "conditional average"
+  }
+  cat("Treatment effect (", x$estimand, ", ", target_str, "): ", format(fitted(x, target), digits = digits), "\n", sep = "", ...)
   
   invisible(x)
 }
+

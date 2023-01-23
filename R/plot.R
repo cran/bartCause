@@ -1,29 +1,38 @@
 plot_sigma <- function(x, main = "Traceplot sigma", xlab = "iteration", ylab = "sigma", lty = 1:x$n.chains, ...) {
-  if (!is(x, "bartcFit"))
+  if (!inherits(x, "bartcFit"))
     stop("plot.sigma requires an object of class 'bartcFit'")
-  if (is.null(x$fit.rsp$sigma))
+  
+  if (responseIsBinary(x))
     stop("residual standard deviation plot requires a continuous response")
   
-  first.sigma <- x$fit.rsp$first.sigma
-  
-  if (is.null(dim(x$fit.rsp$sigma))) {
-    sigma <- c(first.sigma, x$fit.rsp$sigma)
-    numBurnIn  <- length(first.sigma)
-    numSamples <- length(sigma)
+  if (inherits(x$fit.rsp, "stan4bartFit")) {
+    warmup.sigma <- t(extract(x$fit.rsp, "sigma", combine_chains = FALSE, include_warmup = "only"))
+    sample.sigma <- t(extract(x$fit.rsp, "sigma", combine_chains = FALSE, include_warmup = FALSE))
   } else {
-    sigma <- cbind(first.sigma, x$fit.rsp$sigma)
-    numBurnIn  <- ncol(first.sigma)
-    numSamples <- ncol(sigma)
+    warmup.sigma <- x$fit.rsp$first.sigma
+    sample.sigma <- x$fit.rsp$sigma
+  }
+  
+  if (is.null(dim(sample.sigma))) {
+    sigma <- c(warmup.sigma, sample.sigma)
+    numBurnIn  <- length(warmup.sigma)
+    numSamples <- length(sample.sigma)
+  } else {
+    sigma <- cbind(warmup.sigma, sample.sigma)
+    numBurnIn  <- ncol(warmup.sigma)
+    numSamples <- ncol(sample.sigma)
   }
   
   plot(NULL, xlim = c(1L, numSamples), ylim = range(sigma), main = main, xlab = xlab, ylab = ylab, ...)
   abline(v = numBurnIn, col = "red", lwd = 0.5)
+
+  numTotalSamples <- numBurnIn + numSamples
   
   if (NCOL(sigma) > 1L) {
     for (i in seq_len(x$n.chains))
-      lines(seq_len(numSamples), sigma[i,], lty = lty[i], ...)
+      lines(seq_len(numTotalSamples), sigma[i,], lty = lty[i], ...)
   } else {
-    lines(seq_len(numSamples), sigma, lty = lty[1L], ...)
+    lines(seq_len(numTotalSamples), sigma, lty = lty[1L], ...)
   }
   
   invisible(NULL)
@@ -32,7 +41,7 @@ plot_sigma <- function(x, main = "Traceplot sigma", xlab = "iteration", ylab = "
 plot_est <- function(x, main = paste("Traceplot", x$estimand),
                      xlab = "iteration", ylab = x$estimand,
                      lty = 1:x$n.chains, col = NULL, ...) {
-  if (!is(x, "bartcFit")) stop("plot.set requires an object of class 'bartcFit'")
+  if (!inherits(x, "bartcFit")) stop("plot.set requires an object of class 'bartcFit'")
   
   estType <- if (x$method.rsp %in% c("tmle", "p.weight")) "pate" else "cate"
   samples <-  extract(x, type = estType, combineChains = FALSE)
@@ -62,7 +71,7 @@ plot_indiv <- function(x, main = "Histogram Individual Quantities",
                        type = c("icate", "mu.obs", "mu.cf", "mu.0", "mu.1", "y.cf", "y.0", "y.1", "ite"),
                        xlab = "treatment effect", breaks = 20, ...)
 {
-  if (!is(x, "bartcFit")) stop("plot.indiv requires an object of class 'bartcFit'")
+  if (!inherits(x, "bartcFit")) stop("plot.indiv requires an object of class 'bartcFit'")
   
   if (!is.character(type) || type[1L] %not_in% eval(formals(plot_indiv)$type))
     stop("type must be in '", paste0(eval(formals(plot_indiv)$type), collapse = "', '"), "'")
@@ -83,7 +92,7 @@ plot_support <- function(x, main = "Common Support Scatterplot",
                          legend.x = "topleft", legend.y = NULL,
                          ...)
 {
-  if (!is(x, "bartcFit")) stop("plot.support requires an object of class 'bartcFit'")
+  if (!inherits(x, "bartcFit")) stop("plot.support requires an object of class 'bartcFit'")
   if (x$commonSup.rule == "none") stop("common support plot requires support rule other than 'none'")
   
   if (!is.character(sample) || sample[1L] %not_in% eval(formals(plot_support)$sample))
