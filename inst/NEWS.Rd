@@ -1,6 +1,29 @@
 \name{NEWS}
 \title{bartCause News}
 \encoding{UTF-8}
+\section{CHANGES IN VERSION 1.0-8}{
+  \subsection{USER-VISIBLE CHANGES}{
+    \itemize{
+      \item Compatible with TMLE >= 2.0.1.
+    }
+  }
+}
+\section{CHANGES IN VERSION 1.0-7}{
+  \subsection{USER-VISIBLE CHANGES}{
+    \itemize{
+      \item Treatment and propensity score (when applicable) are now added
+            to parametric model. Thanks to Joshua Bon for noticing their
+            absence.
+    }
+  }
+  \subsection{BUG-FIXES}{
+    \itemize{
+      \item \code{summary} now correctly computes SATE.
+      \item \code{summary} now correctly computes sub-group averages.
+      \item Propensity score samples correctly stored for stan4bart models.
+    }
+  }
+}
 \section{CHANGES IN VERSION 1.0-5}{
   \subsection{NEW FEATURES}{
     \itemize{

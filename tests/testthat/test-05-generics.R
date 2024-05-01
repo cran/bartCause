@@ -154,22 +154,7 @@ test_that("summary works with different styles", {
   expect_is(summary(fit, ci.style = "norm"),  "bartcFit.summary")
   expect_is(summary(fit, ci.style = "quant"), "bartcFit.summary")
   expect_is(summary(fit, ci.style = "hpd"),   "bartcFit.summary")
-  expect_is(summary(fit, pate.style = "ppd"), "bartcFit.summary")
-  
-  
-  oldWarn <- getOption("warn")
-  if (!requireNamespace("tmle", quietly = TRUE))
-    options(warn = -1)
-  
-  fit <- bartc(y, z, x, data = testData, method.trt = "glm", method.rsp = "tmle", verbose = FALSE,
-               group.by = g, group.effects = TRUE ,use.ranef = FALSE,
-               n.chains = 2L, n.threads = 1L, n.burn = 0L, n.samples = 7L, n.trees = 13L)
-  
-  options(warn = oldWarn)
-  
-  expect_is(summary(fit), "bartcFit.summary")
-  expect_is(summary(fit, pate.style = "ppd"), "bartcFit.summary")
-  
+  expect_is(summary(fit, pate.style = "ppd"), "bartcFit.summary")  
   
   set.seed(22)
   unweighted_fit <- bartc(y, z, x, data = testData, method.trt = "glm", verbose = FALSE,
@@ -200,6 +185,23 @@ test_that("summary works with different styles", {
   expect_equal(var_tot, (var_w * (n.samples - 1) / n.samples + var_b * (n.obs - 1) / n.obs) * n.obs * n.samples / (n.obs * n.samples - 1))
 })
 
+test_that("summary works with different styles for method tmle", {
+  skip_on_cran()
+
+  oldWarn <- getOption("warn")
+  if (!requireNamespace("tmle", quietly = TRUE))
+    options(warn = -1)
+  
+  fit <- bartc(y, z, x, data = testData, method.trt = "glm", method.rsp = "tmle", verbose = FALSE,
+               group.by = g, group.effects = TRUE ,use.ranef = FALSE,
+               n.chains = 2L, n.threads = 1L, n.burn = 0L, n.samples = 7L, n.trees = 13L)
+  
+  options(warn = oldWarn)
+  
+  expect_is(summary(fit), "bartcFit.summary")
+  expect_is(summary(fit, pate.style = "ppd"), "bartcFit.summary")
+})
+
 test_that("summary works with att/atc", {
   fit <- bartc(y, z, x, data = testData, estimand = "att",
                method.trt = "bart", method.rsp = "bart", verbose = FALSE,
@@ -220,11 +222,23 @@ test_that("summary gives consistent answers with grouped data", {
   sum.g.sate <- summary(inGroupFit, target = "sate")
   sum.g.pate <- summary(inGroupFit, target = "pate")
   
+  # test that sub group estimates are actually subgroup estimates
+  samples.icate <- extract(inGroupFit, "icate", "all")
+  samples.gcate <- lapply(unique(testData$g), function(j) rowMeans(samples.icate[,testData$g == j]))
+  names(samples.gcate) <- unique(testData$g)
+  expect_equal(sum.g.cate$estimates[names(samples.gcate),]$estimate, unname(sapply(samples.gcate, mean)))
+  expect_equal(sum.g.cate$estimates[names(samples.gcate),]$sd, unname(sapply(samples.gcate, sd)))
+  expect_equal(sum.g.cate$estimates["total",]$estimate, mean(samples.icate))
+  expect_equal(sum.g.cate$estimates["total",]$sd, sd(rowMeans(samples.icate)))
+
+  
   expect_equal(nrow(sum.g.cate$estimates), length(unique(testData$g)) + 1L)
-  expect_equal(sum.g.cate$estimates$estimate, sum.g.sate$estimates$estimate)
+  expect_true(length(unique(sum.g.sate$estimates$estimate)) > 1L)
+
   expect_equal(sum.g.cate$estimates$estimate, sum.g.pate$estimates$estimate)
-  expect_true(all(sum.g.pate$estimates$sd > sum.g.sate$estimates$sd &
-                  sum.g.sate$estimates$sd > sum.g.cate$estimates$sd))
+
+  expect_true(all(sum.g.pate$estimates$sd > sum.g.cate$estimates$sd))
+
   expect_equal(unname(sapply(extract(inGroupFit, "cate"), mean)),
                head(sum.g.cate$estimates$estimate, -1L))
 })
@@ -250,6 +264,9 @@ test_that("common support cutoffs are being applied consistently", {
   .GlobalEnv$.Random.seed <- fit$seed
   
   mu.cf <- extract(fit, "mu.cf", combineChains = TRUE)
+  iscates <- t((y.obs - t(mu.cf)) * (2 * testData$z - 1))
+  iscates <- iscates[,fit$commonSup.sub]
+  
   mu.cf <- aperm(array(mu.cf, c(n.samples, n.chains, n.obs)), c(2L, 1L, 3L))
   expect_equal(mu.cf, extract(fit, "mu.cf", combineChains = FALSE))
   
@@ -273,9 +290,23 @@ test_that("common support cutoffs are being applied consistently", {
   expect_true(!is.nan(sum.sate$estimates$estimate) && is.finite(sum.sate$estimates$estimate))
   expect_equal(sum.cate$estimates$estimate, mean(icates))
   expect_equal(sum.cate$estimates$sd, sd(apply(icates, 1, mean)))
-  expect_equal(sum.sate$estimates$estimate, mean(icates))
+  expect_equal(sum.sate$estimates$estimate, mean(iscates))
   expect_equal(sum.sate$estimates$sd,
-               sqrt(sum.cate$estimates$sd^2 + mean(extract(fit, "sigma")^2) / sum(fit$commonSup.sub)))
+               sqrt(var(rowMeans(iscates)) + mean(extract(fit, "sigma")^2) / sum(fit$commonSup.sub)))
 })
 
+source(system.file("common", "friedmanData.R", package = "bartCause"))
+
+test_that("sate summary is correct quantity", {
+  data <- generateFriedmanData(n = 100, causal = TRUE)
+
+  fit <- bartc(y, z, x, data = data, verbose = FALSE, samples = 50L,
+               n.burn = 25L, n.chains = 4L, n.threads = 1L, seed = 0)
+
+  fit_sum <- summary(fit, "sate")
+  samples.sate <- extract(fit, "sate")
+  
+  expect_true(abs(fit_sum$estimates$estimate - mean(samples.sate)) < 1e-1)
+  expect_true(abs(fit_sum$estimates$sd - sd(samples.sate)) < 1e-1)
+})
 
